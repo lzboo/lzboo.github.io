@@ -1,3 +1,9 @@
+---
+layout: article
+title: Document - Writing Posts
+mathjax: true
+---
+
 # 一、实验内容
         在Fashio-MNist数据集上实现:softmax,MLP,LeNet,AlexNet,GooLeNet,ResNet模型训练和测试，对模型的性能进行比对分析。
 
