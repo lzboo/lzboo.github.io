@@ -174,7 +174,6 @@ class GlobalAvgPool2d(nn.Module):
         return F.avg_pool2d(x, kernel_size=x.size()[2:])
 ```
 
-##
 # 五、模型原理及训练
 ## 5.1 Softmax
 ### 5.1.1 相关
@@ -283,7 +282,7 @@ epoch 5, loss 0.0014, train acc 0.865, test acc 0.822
 1. 模型结构
 ![](lenet_1.png)
 ![](lenet_2.png)
-```
+```python
 LeNet(
   (conv): Sequential(
     (0): Conv2d(1, 6, kernel_size=(5, 5), stride=(1, 1))
@@ -356,7 +355,7 @@ epoch 5, loss 0.6076, train acc 0.766, test acc 0.759, time 8.4 sec
 1. 模型结构
 ![](Alexnet_1.png)
 ![](Alexnet_2.jpg)
-```
+```python
 AlexNet(
   (conv): Sequential(
     (0): Conv2d(1, 96, kernel_size=(11, 11), stride=(4, 4))
@@ -447,7 +446,7 @@ epoch 3, loss 0.2391, train acc 0.910, test acc 0.903, time 168.9 sec
 ### 5.5.1 原理
 1. 网络结构
 ![](VGG_2.png)
-```
+```python
 Sequential(
   (vgg_block_1): Sequential(
     (0): Conv2d(1, 8, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
