@@ -1,13 +1,10 @@
-> 19069100183 白梓琳
-
 # 一、实验内容
         在Fashio-MNist数据集上实现:softmax,MLP,LeNet,AlexNet,GooLeNet,ResNet模型训练和测试，对模型的性能进行比对分析。
----
+
 
 # 二、实验环境
 * **环境**：Colab
 * **框架**：Pytorch
----
 
 # 三、Fashion-MNist数据集
 ## 3.1 介绍
@@ -20,7 +17,7 @@ Fmnist_train = torchvision.datasets.FashionMNIST(root='~/Datasets/FashionMNIST',
 
 Fmnist_test = torchvision.datasets.FashionMNIST(root='~/Datasets/FashionMNIST', train=False, download=True, transform=transforms.ToTensor())
 ```
----
+
 # 四、相关函数定义
 ## 4.1 读取小批量数据
 ```python
@@ -177,27 +174,27 @@ class GlobalAvgPool2d(nn.Module):
 # 五、模型原理及训练
 ## 5.1 Softmax
 ### 5.1.1 相关
-1. softmax是多分类模型，且引入softmax运算使输出更适合离散值预测和训练。
-2. softmax回归同线性回归一样，也是一个单层神经网络。
-3. softmax回归跟线性回归一样将输入特征与权重做线性叠加。与线性回归的一个主要不同在于，softmax回归的输出值个数等于标签里的类别数。
-4. 损失函数：交叉熵损失（cross entropy）
+* softmax是多分类模型，且引入softmax运算使输出更适合离散值预测和训练。
+* softmax回归同线性回归一样，也是一个单层神经网络。
+* softmax回归跟线性回归一样将输入特征与权重做线性叠加。与线性回归的一个主要不同在于，softmax回归的输出值个数等于标签里的类别数。
+* 损失函数：交叉熵损失（cross entropy）
     * 最小化交叉熵损失函数等价于最大化训练数据集所有标签类别的联合预测概率。
-5. Cons:
+* Cons:
     * softmax回归适用于分类问题，使用softmax运算输出类别的概率分布。
     * softmax回归是一个单层神经网络，输出个数等于分类问题中的类别个数。
     * 交叉熵适合衡量两个概率分布的差异。
-6. softmax回归的输出值个数等于标签里的类别数。因为一共有4种特征和3种输出动物类别，所以权重包含12个标量w、偏差包含3个标量b，且对每个输入计算o1,o2,o3o:
+* softmax回归的输出值个数等于标签里的类别数。因为一共有4种特征和3种输出动物类别，所以权重包含12个标量w、偏差包含3个标量b，且对每个输入计算o1,o2,o3o:
 ![](softmax_1.png)
 ![](softmax_2.png)
 ![](softmax_3.png)
 
 ### 5.1.2 实现
-1. 读取数据
+**1. 读取数据**
 ```python
 batch_size = 256
 train_iter, test_iter = load_data_fashion_mnist1(batch_size)
 ```
-2. 定义和初始化模型
+**2. 定义和初始化模型**
 ```python
 num_inputs = 784
 num_outputs = 10
@@ -222,15 +219,15 @@ net = nn.Sequential(
 init.normal_(net.linear.weight, mean=0, std=0.01)
 init.constant_(net.linear.bias, val=0) 
 ```
-3. 损失函数：交叉熵
+**3. 损失函数：交叉熵**
 ```python
 loss = nn.CrossEntropyLoss()
 ```
-4. 优化算法：小批量随机梯度下降
+**4. 优化算法：小批量随机梯度下降**
 ```python
 optimizer = torch.optim.SGD(net.parameters(), lr=0.1)
 ```
-5. 模型训练
+**5. 模型训练**
 ```python
 num_epochs = 5
 train_model(net, train_iter, test_iter, loss, num_epochs, batch_size, None, None, optimizer)
@@ -238,12 +235,12 @@ train_model(net, train_iter, test_iter, loss, num_epochs, batch_size, None, None
 
 ## 5.2 MLP
 ### 5.2.1 相关
-1. Cons:
+* Cons:
     * 多层感知机在输出层与输入层之间加入了一个或多个全连接隐藏层，并通过激活函数对隐藏层输出进行变换。
     * 常用的激活函数包括ReLU函数、sigmoid函数和tanh函数。
 
 ### 5.2.2 实现
-1. 定义模型
+**1. 定义模型**
 ```python
 num_inputs, num_outputs, num_hiddens = 784, 10, 256
 
@@ -258,7 +255,7 @@ net = nn.Sequential(
 for params in net.parameters():
     init.normal_(params, mean=0, std=0.01)
 ```
-2. 读取数据并训练
+**2. 读取数据并训练**
 ```python
 batch_size = 256
 train_iter, test_iter = load_data_fashion_mnist1(batch_size)
@@ -279,7 +276,7 @@ epoch 5, loss 0.0014, train acc 0.865, test acc 0.822
 ```
 ## 5.3 LeNet
 ### 5.3.1 LeNet模型
-1. 模型结构
+**1. 模型结构**
 ![](lenet_1.png)
 ![](lenet_2.png)
 ```python
@@ -302,7 +299,7 @@ LeNet(
 )
 ```
 ### 5.3.2 实现
-1. 模型定义
+**1. 模型定义**
 ```python
 class LeNet(nn.Module):
     def __init__(self):
@@ -328,7 +325,7 @@ class LeNet(nn.Module):
         output = self.fc(feature.view(img.shape[0], -1))
         return output
 ```
-2. 数据获取与模型训练
+**2. 数据获取与模型训练**
 ```python
 batch_size = 256
 train_iter, test_iter = load_data_fashion_mnist(batch_size=batch_size)
@@ -352,7 +349,7 @@ epoch 5, loss 0.6076, train acc 0.766, test acc 0.759, time 8.4 sec
 
 ## 5.4 AlexNet
 ### 5.4.1 原理
-1. 模型结构
+**1. 模型结构**
 ![](Alexnet_1.png)
 ![](Alexnet_2.jpg)
 ```python
@@ -384,7 +381,7 @@ AlexNet(
 )
 ```
 ### 5.4.2 实现
-1. 模型定义
+**1. 模型定义**
 ```python
 class AlexNet(nn.Module):
     def __init__(self):
@@ -424,7 +421,7 @@ class AlexNet(nn.Module):
         output = self.fc(feature.view(img.shape[0], -1))
         return output
 ```
-2. 数据获取和模型训练
+**2. 数据获取和模型训练**
 ```python
 batch_size = 128
 # 如出现“out of memory”的报错信息，可减小batch_size或resize
@@ -444,7 +441,7 @@ epoch 3, loss 0.2391, train acc 0.910, test acc 0.903, time 168.9 sec
 > [1] Krizhevsky, A., Sutskever, I., & Hinton, G. E. (2012). Imagenet classification with deep convolutional neural networks. In Advances in neural information processing systems (pp. 1097-1105).
 ## 5.5 VGG
 ### 5.5.1 原理
-1. 网络结构
+**1. 网络结构**
 ![](VGG_2.png)
 ```python
 Sequential(
@@ -492,7 +489,7 @@ Sequential(
 )
 ```
 ### 5.5.2 实现
-1. VGG块
+**1. VGG块**
 ```python
 def vgg_block(num_convs, in_channels, out_channels):
     blk = []
@@ -505,7 +502,7 @@ def vgg_block(num_convs, in_channels, out_channels):
     blk.append(nn.MaxPool2d(kernel_size=2, stride=2)) # 这里会使宽高减半
     return nn.Sequential(*blk)
 ```
-2. VGG网络
+**2. VGG网络**
 ```python
 conv_arch = ((1, 1, 64), (1, 64, 128), (2, 128, 256), (2, 256, 512), (2, 512, 512))
 # 经过5个vgg_block, 宽高会减半5次, 变成 224/32 = 7
@@ -530,7 +527,7 @@ def vgg(conv_arch, fc_features, fc_hidden_units=4096):
                   ))
     return net
 ```
-3. 数据获取与模型训练
+**3. 数据获取与模型训练**
 ```python
 ratio = 8
 small_conv_arch = [(1, 1, 64//ratio), (1, 64//ratio, 128//ratio), (2, 128//ratio, 256//ratio), 
@@ -557,11 +554,11 @@ epoch 5, loss 0.2239, train acc 0.918, test acc 0.915, time 102.7 sec
 > [1] Simonyan, K., & Zisserman, A. (2014). Very deep convolutional networks for large-scale image recognition. arXiv preprint arXiv:1409.1556.
 ## 5.6 NiN
 ### 5.6.1 原理
-1. 网络结构
+**1. 网络结构**
 ![](NiN_1.png)
 ![](NiN_2.jpg)
 ### 5.6.2 实现
-1. NIN块
+**1. NIN块**
 ```python
 def nin_block(in_channels, out_channels, kernel_size, stride, padding):
     blk = nn.Sequential(nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding),
@@ -572,7 +569,7 @@ def nin_block(in_channels, out_channels, kernel_size, stride, padding):
                         nn.ReLU())
     return blk
 ```
-2. NIN网络
+**2. NIN网络**
 ```python
 net = nn.Sequential(
     nin_block(1, 96, kernel_size=11, stride=4, padding=0),
@@ -588,7 +585,7 @@ net = nn.Sequential(
     # 将四维的输出转成二维的输出，其形状为(批量大小, 10)
     FlattenLayer())
 ```
-3. 数据获取与模型训练
+**3. 数据获取与模型训练**
 ```python
 batch_size = 128
 # 如出现“out of memory”的报错信息，可减小batch_size或resize
@@ -614,7 +611,7 @@ epoch 5, loss 0.4170, train acc 0.847, test acc 0.849, time 176.3 sec
 ![](gooLenet_1.png)
 
 ### 5.7.2 实现
-1. Inception块
+**1. Inception块**
 ```python
 class Inception(nn.Module):
     # c1 - c4为每条线路里的层的输出通道数
@@ -639,7 +636,7 @@ class Inception(nn.Module):
         p4 = F.relu(self.p4_2(self.p4_1(x)))
         return torch.cat((p1, p2, p3, p4), dim=1)  # 在通道维上连结输出
 ```
-2. GooLeNet网络
+**2. GooLeNet网络**
 ```python
 b1 = nn.Sequential(nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3),
                    nn.ReLU(),
@@ -667,7 +664,7 @@ b5 = nn.Sequential(Inception(832, 256, (160, 320), (32, 128), 128),
 net = nn.Sequential(b1, b2, b3, b4, b5, 
                     FlattenLayer(), nn.Linear(1024, 10))
 ```
-3. 数据获取与模型训练
+**3. 数据获取与模型训练**
 ```python
 batch_size = 128
 
@@ -693,7 +690,7 @@ epoch 5, loss 0.2792, train acc 0.894, test acc 0.891, time 161.4 sec
 ![](Resnet_1.png)
 
 ### 5.8.2 实现
-1. 残差块
+**1. 残差块**
 ```python
 class Residual(nn.Module):  # 本类已保存在d2lzh_pytorch包中方便以后使用
     def __init__(self, in_channels, out_channels, use_1x1conv=False, stride=1):
@@ -714,7 +711,7 @@ class Residual(nn.Module):  # 本类已保存在d2lzh_pytorch包中方便以后�
             X = self.conv3(X)
         return F.relu(Y + X)
 ```
-2. 残差网络
+**2. 残差网络**
 ```python
 net = nn.Sequential(
         nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3),
@@ -745,7 +742,7 @@ net.add_module("global_avg_pool", GlobalAvgPool2d()) # GlobalAvgPool2d的输出:
 net.add_module("fc", nn.Sequential(d2l.FlattenLayer(), nn.Linear(512, 10))) 
 
 ```
-3. 数据获取与模型训练
+**3. 数据获取与模型训练**
 ```python
 batch_size = 256
 # 如出现“out of memory”的报错信息，可减小batch_size或resize
@@ -770,3 +767,5 @@ epoch 5, loss 0.1616, train acc 0.940, test acc 0.920, time 43.0 sec
 # 六、问题探讨
 ## 6.1 网络深度与参数量对模型性能影响
 ## 6.2 批量大小（batch_size）对模型影响
+
+> 非常感谢李沐大神，致敬！
