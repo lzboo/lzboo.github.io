@@ -2,6 +2,14 @@
 layout: article
 title: Basic Network
 mathjax: true
+mode: immersive
+header:
+  theme: dark
+article_header:
+  type: overlay
+  theme: dark
+  background_color: '#123'
+  background_image: false
 ---
 
 # 一、实验内容
