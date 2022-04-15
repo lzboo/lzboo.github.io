@@ -16,14 +16,10 @@ article_header:
 
         在Fashio-MNist数据集上实现:softmax,MLP,LeNet,AlexNet,GooLeNet,ResNet模型训练和测试，对模型的性能进行比对分析。
 
----
-
 # 二、实验环境
 
 * **环境**：Colab
 * **框架**：Pytorch
-
----
 
 # 三、Fashion-MNist数据集
 
@@ -34,8 +30,6 @@ article_header:
 * **样本**：图片，feature.shape = [1, 28, 28] (channel, weight, high)
 
 * 训练集和测试集中每个类别图像数分别位6000和1000，故训练集和测试集样本数为60000和10000
-  
-  
 
 ## 3.2 数据集获取
 
@@ -353,7 +347,7 @@ epoch 5, loss 0.0014, train acc 0.865, test acc 0.822
    ![](lenet_1.png)
    ![](lenet_2.png)
    
-   ```
+   ```python
    LeNet(
    (conv): Sequential(
     (0): Conv2d(1, 6, kernel_size=(5, 5), stride=(1, 1))
