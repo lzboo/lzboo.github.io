@@ -1,6 +1,6 @@
 ---
 layout: article
-title: Document - Writing Posts
+title: Basic Network
 mathjax: true
 ---
 
@@ -888,3 +888,5 @@ epoch 5, loss 0.1616, train acc 0.940, test acc 0.920, time 43.0 sec
 ## 6.1 网络深度与参数量对模型性能影响
 
 ## 6.2 批量大小（batch_size）对模型影响
+
+> 感谢沐神，以及开源精神！
