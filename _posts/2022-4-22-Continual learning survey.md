@@ -1,3 +1,16 @@
+---
+layout: article
+title: A continual learning survey[关于持续学习领域综述]
+mathjax: true
+tags: Papers
+---
+
+
+
+
+
+
+
 # A continual learning survey: Defying forgetting in classification tasks
 
 > - **Publisher:** [ T-PAMI ]
