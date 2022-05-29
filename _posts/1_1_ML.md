@@ -1,0 +1,799 @@
+---
+layout: article
+title: Fault-Diagnosis_CWRU_ML
+mathjax: true
+tags: Fault-Diagnosis
+---
+
+---
+
+**Topic:** 用传统的机器学习方法对轴承进行故障诊断
+
+**Cooperators:** 友Q和友Min
+
+**Task:**
+
+* Data Processing
+  
+  - [x] 数据格式转化+载入
+  
+  - [x] 数据重叠采样
+  
+  - [x] 特征提取
+  
+  - [x] 样本生成+数据集划分
+
+* Model & Train & Test
+  
+  - [x] KNN
+  
+  - [x] SVM
+  
+  - [x] XGboost
+
+* Cons & Future
+
+---
+
+# 1. Data preprocessing
+
+## CWRU Datasets
+
+        [CWRU轴承数据集](http://csegroups.case.edu/bearingdatacenter/home)是由美国凯斯西储大学（Case Western Reserve University，CRRU）获得的。该数据集获取的主要的实验设备包括：2 hp电动机，扭矩传感器和测力计。数据集的振动信号通过**四种负载**情况，以**12kHz的采样频率**，在**三个**不同的地方设置加速度计收集。
+
+        该数据集具有以下**四种**情况：正常状况，球缺陷（BD），外圈缺陷（OR）和内圈缺陷（IR）。每个故障条件具有三个度数：0.18、0.36和0.54 mm。本次以九个有故障的轴承状况和正常状况共**十种类别**作为实验数据集，如下表所示：
+
+| 故障类型      | 故障直径(mil) | 种类  |
+|:---------:|:---------:|:---:|
+| Noraml    | 0         | 0   |
+| Ball      | 0.007     | 1   |
+| InnerRace | 0.007     | 2   |
+| OutRace   | 0.007     | 3   |
+| Ball      | 0.014     | 4   |
+| InnerRace | 0.014     | 5   |
+| OuterRace | 0.014     | 6   |
+| Ball      | 0.021     | 7   |
+| InnerRace | 0.021     | 8   |
+| OuterRace | 0.021     | 9   |
+
+        原始数据以mat文件存储，每一个mat文件代表十类中的一类数据，同时一类数据同时具有三个加速度数据，即BA，DE，FE三列，将mat后缀文件转为csv文件后，通过pandas进行导入,得到十类数据。为了方便处理，转换为ndarray格式。
+
+```python
+1. cwru_0 = pd.read_csv('D:\\CWRU_0.csv',engine = 'python')    
+2. cwru_1 = pd.read_csv('D:\\CWRU_1.csv',engine = 'python') 
+...
+```
+
+## 1.1 Row_data load / Row_data resampling(50%)
+
+* **Row_data load**
+
+        原始数据以mat文件存储，每一个mat文件代表十类中的一类数据，同时一类数据同时具有从三个位置采集的加速度数据，即BA，DE，FE三列。将mat后缀文件转为csv文件，通过pandas进行导入,得到十类数据。为了方便处理，转换为ndarray格式。    
+
+* **Resampling(50%)**
+
+        将数据从原始array数组中每隔1000个取样成为一个连续时域样本，采样重叠率为50%，可以自由调节，目前暂未研究不同重叠率的影响。
+
+```python
+root = '/content/drive/MyDrive/Colab_Notebooks/CWRU/data_1/'
+str_name1 = 'cwru_'
+str_name2 = 'CWRU_'
+
+for i in range(0, 10):
+    '''data load'''
+    data = pd.read_csv(root + 'CWRU_' + str(i) + '.csv',engine = 'python')
+    data_name = str_name1 + str(i)   # print(data_name)  -- cwru_1, cwru_2...
+    data_name = data.values   
+# print(cwru_0)  -- (m<采样点数> x 4列<三个维度+label>)
+# print(cwru_0.shape)  -- (483903, 4)
+  
+    '''data resampling'''
+    sam_name = str_name2 + str(i)
+    sam_name = []   
+    # print(sam_name)  # [] [] []...
+    row_array = np.arange(data_name.shape[0])
+    # print(row_array)  -- [     0      1      2 ... 483900 483901 483902]
+
+    k = 0
+    for j in range((int)(data_name.shape[0] / 500) - 1):     # 以50%（500/1000）重采样生成的样本数
+        CWRU_ = data_name[row_array[k : k + 1000]]           # 1000个点生成一个样本
+        sam_name.append(CWRU_)
+        k += 500
+    print("----------------")
+    sam_name = np.array(sam_name)
+    print(sam_name.shape)
+    # print(CWRU_0.shape)  -- (966, 1000, 4)    # 966个样本， 每个样本中含1000个采样点， 每个采样点是4个特征（3+1
+    
+```
+
+
+
+## 1.2 Feature Extract(4+8)
+
+        原始数据是按12kHz的采样频率采样得到，即为序列数据，为保留时序信息，我们将一段时间内连续采样点作为一个样本。本次实验，我们在该数据集上以1000个采样点生成一个样本，提取数据**时域特征**和**频域特征**。
+
+        我们构造了一个**特征提取函数**：`feature(data,p1, p2)`，特征提取时分别导入BA，DE, FE的数据分开提取。`data.shape` = (采样点总数,1)，`p1`表示开始点，`p2`表示结束点。
+
+        我们一共构造了**12个特征**（9个时域特征，3个频域特征）：
+
+| 均值（mean）       | 方差（var）              | 均方根（rms）                     | 峭度（kurt）          |
+|:--------------:|:--------------------:|:----------------------------:|:-----------------:|
+| **偏度（skew）**   | **波形因子（boxing）**     | **波峰因子（peak）**               | **脉冲因子（impulse）** |
+| **裕度因子（yudu）** | **包络谱最大幅值处频率（maxf）** | **一位序列信号幅值中位数处的概率密度估计（pdf）** | **一位序列香农信号熵**     |
+
+### 1.3.1 Time Domain Features
+
+1. `mean_`(均值)：信号的平均
+   
+   <img title="" src="https://raw.githubusercontent.com/lzboo/ImgStg/main/2022/05/29-19-58-43-1.png" alt="1.png" data-align="center" width="106">
+
+2. `var_`(方差)：每个样本值与全体样本值的平均数之差的平方值的平均数，代表了信号能量的动态分量
+   
+   <img title="" src="https://raw.githubusercontent.com/lzboo/ImgStg/main/2022/05/29-19-58-54-2.png" alt="2.png" data-align="center" width="187">
+
+3. `rms_`(均方根)：是信号的有效值
+   
+   <img title="" src="https://raw.githubusercontent.com/lzboo/ImgStg/main/2022/05/29-19-59-06-3.png" alt="3.png" data-align="center" width="283">
+
+4. `kurt_`(峭度因子)：表征概率密度分布曲线在平均值处峰值高低的特征数
+   
+   <img title="" src="https://raw.githubusercontent.com/lzboo/ImgStg/main/2022/05/29-20-00-11-4.png" alt="4.png" data-align="center" width="318">
+
+5. `skew_`(偏度因子)：是统计数据分布偏斜方向和程度的度量，是统计数据分布非对称程度的数字特征
+   
+   <img title="" src="https://raw.githubusercontent.com/lzboo/ImgStg/main/2022/05/29-20-00-24-5.png" alt="5.png" data-align="center" width="388">
+   
+   <img title="" src="https://raw.githubusercontent.com/lzboo/ImgStg/main/2022/05/29-20-00-41-6.png" alt="6.png" data-align="center" width="386">
+
+6. `form_` (波形因子)：波性因子是有效值（RMS）与整流平均值的比值
+   
+   <img title="" src="https://raw.githubusercontent.com/lzboo/ImgStg/main/2022/05/29-20-03-27-14.png" alt="14.png" data-align="center" width="86">
+
+7. `par_`(峰值因子)：是信号峰值与有效值（RMS）的比值，代表的是峰值在波形中的极端程度，**用来检测信号中有无冲击的指标**
+   
+   <img title="" src="https://raw.githubusercontent.com/lzboo/ImgStg/main/2022/05/29-20-02-44-7.png" alt="7.png" data-align="center" width="249">
+
+8. `impulse_`(脉冲因子)：是信号峰值与整流平均值的比值，**用来检测信号中有无冲击的指标**
+   
+   <img title="" src="https://raw.githubusercontent.com/lzboo/ImgStg/main/2022/05/29-20-02-54-8.png" alt="8.png" data-align="center" width="245">
+
+9. `yudu_`(裕度因子)：是信号峰值与方根幅值的比值。**用来检测机械设备的磨损状况。**
+   
+   <img title="" src="https://raw.githubusercontent.com/lzboo/ImgStg/main/2022/05/29-20-03-02-9.png" alt="9.png" data-align="center" width="429">
+
+### 1.3.2 Frequency Domain Feature
+
+10. `maxf_in_env_spectrum(data, fs)`包络谱最大幅值处的频率:
+    
+    - 包络谱的求解方法：目标信号→希尔伯特变换→得到解析信号→求解析信号的模→得到包络信号→傅里叶变换→得到Hilbert包络谱
+      
+      * 希尔伯特变换：
+        
+        <img title="" src="https://raw.githubusercontent.com/lzboo/ImgStg/main/2022/05/29-19-58-28-10.png" alt="10.png" data-align="center" width="328">
+      
+      ```python
+      # 包络谱最大幅值处的频率
+      def maxf_in_env_spectrum(data, fs):  #data为1000采样点的某一原始特征组织的一维array
+          # 求希尔伯特变换
+          T = 1/fs
+          N = len(data)
+          analytic_signal = hilbert(data)
+      
+          # 求解析信号的模同时进行快速傅里叶变换:
+          am_enve = np.abs(analytic_signal).reshape(N,)              
+          yf = fft(am_enve - np.mean(am_enve))
+         
+          # 得到包络谱后返回最大幅度的频率：
+          y_envsp = 2.0/N * np.abs(yf[0:N//2]).reshape(N//2,1) 
+          xf = np.linspace(0.0, 1.0/(2.0*T), N//2)
+      
+          # 返回最大幅值的频率
+          maxf = xf[np.argwhere(y_envsp == np.max(y_envsp))[0][0]]
+          return  maxf
+      ```
+
+11. `pdf_for_median_am(s)`一维序列信号幅值中位数处的概率密度估计:
+    
+    - 定义一个`hist_for_entropy(s)`函数计算信号幅值中位数处的概率密度估计：返回*频次数组res、最大值、最小值，ncell*。
+      
+      ```python
+      # 对信号的直方图计算 为了计算信号幅值中位数处的概率密度估计   
+      def hist_for_entropy(s):
+          s = np.ravel(s)  #ravel转为一维数组
+          N = len(s)
+          s_max = np.max(s)
+          s_min = np.min(s)
+          delt = (s_max - s_min) / N
+          c_0 = s_min - delt / 2
+          c_N = s_max + delt / 2
+          ncell = int(np.ceil(np.sqrt(N)))  # ceil向上取整
+      
+          # c = f(s)
+          c = np.round((s - c_0) / (c_N - c_0) * ncell + 1/2) # 四舍五入取整
+      
+          # 计算分组数组出现的频次
+          res = np.zeros(ncell)
+          for i in range(0, N):
+              ind = int(c[i])
+              if ind >= 1 and ind <= ncell:
+                  res[ind-1] = res[ind-1] + 1
+          return res, s_min, s_max, 
+      ```
+    
+    - 计算**一维序列信号幅值中位数处的概率密度估计**：通过`hist_for_entropy(s)`函数得：*res, s_min, s_max, ncell*，再归一化得到概率密度：
+      
+      <img title="" src="https://raw.githubusercontent.com/lzboo/ImgStg/main/2022/05/29-19-58-17-11.png" alt="11.png" data-align="center" width="152">
+      
+      计算得幅值中位数处概率密度估计：
+      
+      <img title="" src="https://raw.githubusercontent.com/lzboo/ImgStg/main/2022/05/29-19-58-09-12.png" alt="12.png" data-align="center" width="397">
+      
+      ```python
+      #一维序列信号幅值中位数处的概率密度估计
+      def pdf_for_median_am(s):
+              N = len(s)
+              res, s_min, s_max, ncell = hist_for_entropy(s)
+              # 归一化的到概率密度
+              pdf = res / N / (s_max - s_min) * ncell
+              
+              # 幅值中位数 映射 到直方图的组号
+              delt = (s_max - s_min) / N
+              c_min = s_min - delt / 2
+              c_max = s_max + delt / 2
+              
+              s_median = np.median(s)
+              s_median_icell = int(np.round((s_median - c_min) / (c_max - c_min) * ncell + 1/2))
+              
+              return  pdf[s_median_icell]
+      ```
+
+12. `shannom_entropy_for_hist(s)`一维序列的香农熵:
+    
+    * 信息熵计算公式：
+      
+      <img title="" src="https://raw.githubusercontent.com/lzboo/ImgStg/main/2022/05/29-19-57-05-13.png" alt="13.png" data-align="center" width="213">
+    
+    * 变量的**不确定性越大，熵也越大**
+    
+    * 在一维序列中，数据值的范围并不是确定的，如果进行域值变换，使其转换到一个整数范围的话，就会丢失数据，因此，需要用`hist_for_entropy(s)`函数对x(n)的赋值范围进行分块，再计算信息熵
+      
+      ```python
+      #一维序列的香农信号熵
+      def shannom_entropy_for_hist(s):  
+              # 对x(n)的赋值范围分块
+              h,s_min, s_max, ncell = hist_for_entropy(s)
+              # 无偏估计
+              h = h[h!=0]
+              N = np.sum(h)
+      
+              # 信息熵计算
+              estimate = -np.sum(h*np.log(h)) / N
+              sigma = np.sum(h*np.log2(h)**2)    
+              sigma = np.sqrt((sigma/N - estimate**2) / (N - 1))
+              estimate = estimate + np.log(N) + np.log((s_max-s_min)/ncell)
+              nbias = -(ncell-1)/(2*N)
+              estimate = estimate - nbias
+              return estimate
+      ```
+
+### 1.3.3 Feature extraction function:`feature(data, p1, p2, fs)`
+
+```python
+fs = 12000
+def feature(data, p1, p2,fs):
+    sum = 0
+    for i in range(p1, p2):
+        sum += math.sqrt(abs(data[i]))
+    #最大值
+    max_ = data[p1:p2].max()
+    #均值
+    mean_ = data[p1:p2].mean()
+    #绝对值
+    abs_ = abs(data[p1:p2])
+    #方差
+    var_ = data[p1:p2].var()
+    #标准差
+    std_ = data[p1:p2].std()
+    #均方根
+    rms_ = math.sqrt(pow(mean_, 2) + pow(std_, 2))
+    
+    xx=[x[0] for x in data]
+    s = pd.Series(xx)
+    # 峭度
+    kurt_ = s.kurt()
+    #print(kurt_EF)
+    # 偏度
+    skew_ = s.skew()  
+    
+    # 波形因子
+    form_ = rms_ / (abs_.mean())
+    # 峰值因子
+    par_ = max_ / rms_
+    # 脉冲因子
+    impulse_ = max_ / (abs_.mean())
+    # 裕度因子
+    yudu_ = max_ / pow((sum / (p2 - p1)), 2)
+    # 输入reshape成一维，用于后续频域分析
+    data_s = data.ravel()
+    # 包络谱最大幅值处的频率
+    maxf_ = maxf_in_env_spectrum(data_s,fs)
+    # 一维序列信号幅值中位数处的概率密度估计
+    pdf_ = pdf_for_median_am(data_s)
+    # 一维序列的香农信号熵
+    entropy_ = shannom_entropy_for_hist(data_s)
+    
+    feature_list = {"mean": mean_, "var": var_, "rms":rms_, 
+                    "kurt":kurt_, "skew":skew_, "form":form_,
+                    "par":par_, "impulse":impulse_, "yudu":yudu_,
+                    "maxf":maxf_, "entropy":entropy_, "pdf":pdf_}
+    return feature_list
+
+# 用第一类cwru_1的第一列 FE测试
+feature(FE_1_1, 1, 1000,fs)
+```
+
+### 1.3.4 Feature extraction results & Feature importance ranking
+
+        以第一类cwru_1中的第一列FE中1-1000采样点测试：
+
+```python
+# 用第一类cwru_1的第一列 FE测试
+feature(FE_1_1, 1, 1000,fs)
+```
+
+        `feature(data, p1, p2,fs)`函数最终返回一个包含以上12个特征的feature_list：
+
+```
+{'mean': 0.004968823943943944,
+'var': 0.01878744257741752,
+'rms': 0.1371573249549707,
+'kurt': -0.18708305756403298,
+'skew': -0.03531797359099391,
+'form': 1.2346087309932834,
+'par': 2.9666661998080444,
+'impulse': 3.6626719922256763,
+'yudu': 4.2784956673448935,
+'maxf': 156.312625250501,
+'entropy': -0.5706768585895942,
+'pdf': 2.3336084564390505}
+```
+
+        下图表展示了**特征的重要度排序**：
+
+     方差 > 均值 > 香农信号熵 > 波形因子 > 峭度因子 > 幅值中位数处的概率密度估计
+
+<img title="" src="https://raw.githubusercontent.com/lzboo/ImgStg/main/2022/04/15-12-16-27-3.png" alt="3.png" width="477" data-align="center">
+
+## 1.4 Data to Samples
+
+        时序数据重叠采样后，得到一系列**三维采样矩阵**，第一维表示样本数量，第二维是每个样本的原始1000个采样点，第三维是三个加速度数据加上标签值。我们定义 `data_to_samples(data_mkup_thousand)`函数将采样点转为样本点。
+
+        CWRU数据集提供了三个不同位置的采样加速度数据，其中BA位置normal类数据全部缺失，暂且没有想到好的解决办法，因此暂时剔除BA位置数据。
+
+* 从1000个采样点中提取DE和FE的时序数据：
+  
+  ```python
+  number = 0
+  for each_matrix in data_mkup_thousand:
+      label_of_sample = each_matrix[0][-1]
+      BA_of_each = each_matrix[:,0].reshape(-1,1)    #采样矩阵reshape成三个单列
+      DE_of_each = each_matrix[:,1].reshape(-1,1)
+      FE_of_each = each_matrix[:,2].reshape(-1,1)
+  ```
+
+* DE_of_each及FE_of_each中是1000个采样点的数据，将他们作为特征提取函数的输入，最终得到提取的12个特征：y 
+  
+  ```python
+  # 每个采样矩阵对DE特征提取
+  single_of_DE = []                        #p2个采样点提取出的一个样本列表
+  dict_DE = feature(DE_of_each, p1, p2,fs)
+  for j in dict_DE.values():
+        single_of_DE.append(j)
+          single_of_DE.append(label_of_sample)
+          single_of_DE = np.array(single_of_DE).reshape(1,-1)   #转为array
+              
+  # 每个采样矩阵对FE特征提取
+  single_of_FE = []  
+  dict_FE = feature(FE_of_each, p1, p2,fs)
+  for k in dict_FE.values():
+      single_of_FE.append(k)
+      single_of_FE.append(label_of_sample)
+      single_of_FE = np.array(single_of_FE).reshape(1,-1) 
+  ```
+
+* 一个样本同时具有DE和FE位置的十二个特征。通过concatenate将两个维位向量整合成二维矩阵，将n个二维矩阵构成的三维矩阵，作为最终输出：
+  
+  ```python
+  ```python
+  sample_matrix = np.concatenate((single_of_DE,single_of_FE),axis = 0).reshape(1,2,-1)   #样本矩阵     
+  #sample_matrix = np.concatenate((single_of_BA,single_of_DE,single_of_FE),axis = 0).reshape(1,3,-1)  考虑BA情况
+          
+    if number == 0:
+       matrix_to_samples = sample_matrix
+    else:
+       matrix_to_samples = np.concatenate((matrix_to_samples,sample_matrix),axis = 0)
+       number = number + 1
+  return matrix_to_samples
+  ```
+  ```
+
+* `data_to_samples(data_mkup_thousand)`函数完整代码
+  
+  ```python
+  ''' 1000采样点生成一个样本 '''
+  
+  p1 = 1
+  p2 = 1000
+  def data_to_samples(data_mkup_thousand):
+      number = 0
+      for each_matrix in data_mkup_thousand:
+          label_of_sample = each_matrix[0][-1]
+          BA_of_each = each_matrix[:,0].reshape(-1,1)    #采样矩阵reshape成三个单列
+          DE_of_each = each_matrix[:,1].reshape(-1,1)
+          FE_of_each = each_matrix[:,2].reshape(-1,1)
+    
+  '''  
+           # 每个采样矩阵BA特征提取
+            single_of_BA = []                          #p2个采样点提取出的一个样本列表
+            dict_BA = feature(BA_of_each, p1, p2,fs)
+            for i in dict_BA.values():
+                single_of_BA.append(i)
+            single_of_BA.append(label_of_sample)
+            single_of_BA = np.array(single_of_BA).reshape(1,-1)  #转为array
+  '''
+          
+          # 每个采样矩阵对DE特征提取
+          single_of_DE = []                        #p2个采样点提取出的一个样本列表
+          dict_DE = feature(DE_of_each, p1, p2,fs)
+          for j in dict_DE.values():
+              single_of_DE.append(j)
+          single_of_DE.append(label_of_sample)
+          single_of_DE = np.array(single_of_DE).reshape(1,-1)   #转为array
+              
+          # 每个采样矩阵对FE特征提取
+          single_of_FE = []   #p2个采样点提取出的一个样本列表
+          dict_FE = feature(FE_of_each, p1, p2,fs)
+          for k in dict_FE.values():
+              single_of_FE.append(k)
+          single_of_FE.append(label_of_sample)
+          single_of_FE = np.array(single_of_FE).reshape(1,-1)  #转为array
+          
+          sample_matrix = np.concatenate((single_of_DE,single_of_FE),axis = 0).reshape(1,2,-1)   #样本矩阵     
+          #sample_matrix = np.concatenate((single_of_BA,single_of_DE,single_of_FE),axis = 0).reshape(1,3,-1)  考虑BA情况
+          
+          if number == 0:
+               matrix_to_samples = sample_matrix
+          else:
+               matrix_to_samples = np.concatenate((matrix_to_samples,sample_matrix),axis = 0)
+          number = number + 1
+      return matrix_to_samples
+  ```
+  
+  最后，将十类数据采样点转化为样本：
+  
+  ```python
+  matrix_to_samples_0 = data_to_samples(CWRU_0)
+  matrix_to_samples_1 = data_to_samples(CWRU_1)
+  ...
+  matrix_to_samples_9 = data_to_samples(CWRU_9)
+  ```
+
+
+
+## 1.5 数据集划分
+
+### 1.5.1 train/val/test划分
+
+        将特征提取后的每类样本集作为输入，按照7：2：1进行训练集，验证集和测试集划分。本实验采取生成索引列表并打乱索引列表，依次返回已打乱的索引列表中的不同区间的值，做为训练集、验证集和测试集对应的集合元素索引。再将索引值对应的样本作为输出：
+
+```python
+'''划分数据集：train, eval, test'''
+
+def datasplit(data):
+    total = data.shape[0]
+    each = total//10
+    indexlist = list(range(total))   #索引列表
+    random.shuffle(indexlist)
+    train_indice = indexlist[:7*each]
+    eval_indice = indexlist[7*each:9*each]
+    test_indice = indexlist[9*each:]
+    return data[train_indice],data[eval_indice],data[test_indice]  
+```
+
+        将十类样本分别作为该函数的输出，分别十类得到输出，类似于分层抽样的思想：
+
+```python
+cwru_0_train,cwru_0_eval,cwru_0_test = datasplit(matrix_to_samples_0)
+cwru_1_train,cwru_1_eval,cwru_1_test = datasplit(matrix_to_samples_1)
+...
+cwru_9_train,cwru_9_eval,cwru_9_test = datasplit(matrix_to_samples_9)
+```
+
+        最后，将不同类别的训练集整合成最终的训练集，测试集与验证集操作相同：
+
+```python
+1.    cwru_train = np.concatenate((cwru_0_train,cwru_1_train,cwru_2_train,cwru_3_train,cwru_4_train,cwru_5_train,cwru_6_train,cwru_7_train,cwru_8_train,cwru_9_train),axis = 0)  
+2.    cwru_eval = np.concatenate((cwru_0_eval,cwru_1_eval,cwru_2_eval,cwru_3_eval,cwru_4_eval,cwru_5_eval,cwru_6_eval,cwru_7_eval,cwru_8_eval,cwru_9_eval),axis = 0)  
+3.    cwru_test = np.concatenate((cwru_0_test,cwru_1_test,cwru_2_test,cwru_3_test,cwru_4_test,cwru_5_test,cwru_6_test,cwru_7_test,cwru_8_test,cwru_9_test),axis = 0) 
+```
+
+### 1.5.2 随机打乱
+
+        定义函数suffle(data,label)，对样本设置索引，打乱索引值，实现打乱样本的特征标签对。
+
+```python
+''' 打乱数据 '''
+
+def shuffle(data,label):    
+    index = [i for i in range(len(data))] 
+    random.shuffle(index) 
+    data = data[index]
+    label = label[index] 
+    return data, label
+```
+
+        将划分好的训练集、测试集、验证集随机打乱：
+
+```python
+'''打乱'''
+X_train_DE, y_train_DE =  shuffle(cwru_train[:,0,0:12], cwru_train[:,0,12])
+X_eval_DE, y_eval_DE =  shuffle(cwru_eval[:,0,0:12], cwru_eval[:,0,12])
+X_test_DE, y_test_DE =  shuffle(cwru_test[:,0,0:12], cwru_test[:,0,12])
+
+X_train_FE, y_train_FE =  shuffle(cwru_train[:,1,0:12], cwru_train[:,1,12])
+X_eval_FE, y_eval_FE =  shuffle(cwru_eval[:,1,0:12], cwru_eval[:,1,12])
+X_test_FE, y_test_FE =  shuffle(cwru_test[:,1,0:12], cwru_test[:,1,12])
+```
+
+        其实更为简洁的实现方式是，先打乱所有样本，再划分数据集。
+
+
+
+# 2. Model & Train & Test
+
+已经划分的数据集：
+
+- DE: *`X_train_DE / y_train_DE` `X_eval_DE / y_eval_DE` `X_test_DE / y_test_DE`*
+- FE: *`X_train_FE / y_train_FE` `X_eval_FE / y_eval_FE` `X_test_FE / y_test_FE`*
+
+## 2.1 KNN（Number of test samples：338）
+
+        使用KNN模型对数据进行分类。并对不同k值的预测正确率可视化，并选取k的最优（k=5）值绘制混淆矩阵。
+
+### 2.1.1 Code
+
+```python
+ ''' knn训练 '''
+training_accuracy = []
+test_accuracy = []
+neighbors_settings = range(1,45)
+
+for n_neighbors in neighbors_settings:
+    knn = KNeighborsClassifier(n_neighbors)    #实例化KNN模型
+    knn.fit(X_train_DE, y_train_DE)      #放入训练数据进行训练
+    # print(knn.predict(cwru_eval[:,:-1]))           #打印预测内容
+    # print(cwru_test[:3])     #实际标签
+    training_accuracy.append(knn.score(X_train_DE, y_train_DE))
+    #print(knn.score(cwru_train[:,0,0:12],cwru_train[:,0,12]))
+    test_accuracy.append(knn.score(X_test_DE, y_test_DE))
+    #print("k={}: accuracy: {:.3f}% ".format(n_neighbors,knn.score(X_test_DE, y_test_DE)*100))
+# max_index = eval_accuracy.index(max(eval_accuracy))
+# print(max_index, max(eval_accuracy))
+    
+plt.plot(neighbors_settings, training_accuracy, label="training accuracy")
+plt.plot(neighbors_settings, test_accuracy, label="test accuracy")
+plt.xlabel("n_neighbors")
+plt.ylabel("Accuracy")
+plt.legend()
+
+# X_test_DE.shape
+```
+
+```python
+''' 混淆矩阵绘制 '''
+
+def Confusion_Matrix(pre, fact):
+    classes = list(set(fact))
+    classes.sort()
+    confusion = confusion_matrix(pre, fact)
+    plt.imshow(confusion, cmap=plt.cm.coolwarm)
+    indices = range(len(confusion))
+    plt.xticks(indices, classes)
+    plt.yticks(indices, classes)
+
+    plt.colorbar()
+
+    plt.xlabel('pre')
+    plt.ylabel('fact')
+    # 显示数据，直观些
+    for first_index in range(len(confusion)):
+        for second_index in range(len(confusion[first_index])):
+            plt.text(first_index, second_index, confusion[first_index][second_index])
+    plt.show()
+```
+
+```python
+# knn混淆矩阵
+knn = KNeighborsClassifier(n_neighbors=4)    # 实例化KNN模型
+knn.fit(X_train_DE, y_train_DE)              # 放入训练数据进行训练
+pred_knn = knn.predict(X_test_DE)
+# print(prediction)
+# print(y_test_DE)     #实际标签
+Confusion_Matrix(pred_knn, y_test_DE)
+```
+
+### 2.1.2 Analysis of results
+
+<img title="" src="https://raw.githubusercontent.com/lzboo/ImgStg/main/2022/04/15-12-31-51-4.png" alt="4.png" data-align="center" width="337">
+
+        上图反应了不同k值下测试集的准确率，可以发现曲线近似随着k值的增加单调递减。我们分析出现这种问题的原因是：特征的量级比较小，不同特征之间的相似度较大，区分度不明显。可以通过对特征进行归一化处理改进这一问题。
+
+<img src="https://raw.githubusercontent.com/lzboo/ImgStg/main/2022/04/15-12-34-00-5.png" title="" alt="5.png" data-align="center">
+
+        由混淆矩阵可以得出：测试集中的338个样本在k=5的KNN模型分类下，26个样本分类错误，分类准确率达92.3%。
+
+## 2.2 SVM
+
+SVM主要有两个参数：C（惩罚系数）、kernal（核函数）
+
+1. 核函数（线性核、高斯核、多项式核）：
+   - 若要实现非线性SVM模型，需要找到一个核函数把**特征空间映射到高维空间，使样本在高维线性可分**
+   - 核技巧：解决了映射后高维空间中样本距离计算，但又不显式展示出映射函数
+2. 惩罚系数：
+   - 惩罚因子可以理解为调节优化方向中两个指标（间隔大小/分类准确度）偏好的权重：C越大，偏重准确率；C越小，偏重噪声容忍度
+
+### 2.2.1 Code
+
+```python
+lin_svc = svm.SVC(kernel='linear').fit(X_train_DE, y_train_DE)
+rbf_svc = svm.SVC(kernel='rbf').fit(X_train_DE, y_train_DE)
+poly_svc = svm.SVC(kernel='poly').fit(X_train_DE, y_train_DE)
+
+title = ['linear kernel',
+          'RBF kernel',
+          'polynomial kernel']
+
+for i, model in enumerate((lin_svc, rbf_svc, poly_svc)):
+    print(title[i])
+    pred_svm = model.predict(X_test_DE)
+    print(classification_report(y_test_DE, pred_svm))
+    Confusion_Matrix(pred_svm, y_test_DE)
+    print("------------------------------")
+```
+
+### 2.2.2 Analysis of results
+
+        通过计算不同核函数的`precision`、`recall`、`f1-scall`等指标，发现线性核分类效果最佳，准确率可达94%。为什么RBF和poly表现得这么差？(并没有调参，应该是过拟合问题)
+
+* **线性核：**
+  
+  <img title="" src="https://raw.githubusercontent.com/lzboo/ImgStg/main/2022/05/29-20-42-47-1.png" alt="1.png" width="439" data-align="center">
+
+* **高斯核：**
+  
+  <img title="" src="https://raw.githubusercontent.com/lzboo/ImgStg/main/2022/05/29-20-42-58-5.png" alt="5.png" data-align="center" width="371">
+  
+  <img title="" src="https://raw.githubusercontent.com/lzboo/ImgStg/main/2022/05/29-20-43-03-6.png" alt="6.png" width="325" data-align="center">
+
+* **多项式核：**
+  
+  <img title="" src="https://raw.githubusercontent.com/lzboo/ImgStg/main/2022/05/29-20-43-43-2.png" alt="2.png" data-align="center" width="369">
+  
+  <img title="" src="https://raw.githubusercontent.com/lzboo/ImgStg/main/2022/05/29-20-43-46-3.png" alt="3.png" data-align="center" width="366">
+
+        这里补充一下关于SVM核函数选择的问题：
+
+1. 线性核：
+   
+   * 优：
+     
+     * 方案首选，**奥卡姆剃刀定律**
+     
+     * 简单，可较快求解QP问题
+     
+     * 可解释性强
+   
+   * 限制：
+     
+     * 只能解决**线性可分问题**
+
+2. 多项式核：
+   
+   * 优：
+     
+     * 可解决非线性问题
+     
+     * 可主观设置幂级数
+   
+   * 限制：
+     
+     * 对大数量级幂数不适用
+     
+     * 超参较多
+
+3. 高斯核：
+   
+   * 优：
+     
+     * 可以映射到无限维
+     
+     * 决策边界更多样
+     
+     * 只有一个参数
+   
+   * 限制：
+     
+     * 可解释性差
+     
+     * 计算速度较慢
+     
+     * 参数选取不当容易过拟合
+
+> Reference:[SVM核函数对比分析及算法优缺点](https://blog.csdn.net/qq_29462849/article/details/89516133)
+
+## 2.3 XGboost
+
+        CWRU数据集分类在XGboost模型上可以取得很好的效果，该模型是大规模并行boosted tree的工具，主要参数及含义如下。
+
+### 2.3.1 Code
+
+```python
+1.    ''''' XGboost训练 '''  
+2.    # 算法参数  
+3.    params = {  
+4.        'booster': 'gbtree',             # 基础模型：'决策树 '  
+5.        'objective': 'multi:softmax',    # 目标： '多分类：softmax'  
+6.        'num_class': 10,                 # 类别个数： ' 10 '      
+7.        'gamma': 0.1,                    # min_split_loss  
+8.        'max_depth': 6,                  # 树深 ： 该值越大，模型越复杂  
+9.        'lambda': 2,                     # L2正则化权重  
+10.        'subsample': 0.7,                # 构建每棵树对样本采样率  
+11.        'colsample_bytree': 0.75,        # 特征采样率  
+12.        'min_child_weight': 3,           # 节点分裂阈值  
+13.        'eta': 0.1,                      # 学习率  
+14.    }  
+15.      
+16.    dtrain = xgb.DMatrix(X_train_DE, y_train_DE)  
+17.      
+18.    model = xgb.XGBClassifier(**params)  
+19.    model.fit(X_train_DE, y_train_DE)  
+20.    pred_xgboost = model.predict(X_test_DE)  
+21.    print(classification_report(y_test_DE, pred_xgboost))  
+```
+
+### 2.3.2 Analysis of results
+
+        上表反应了使用XGboost模型进行分类时，不同类别分类的准确率，召回率，f1评价值。可以看出，XGboost分类器表现优异，各项指标均逼近100%，效果可以比拟后续用CNN做得实验。
+
+        由混淆矩阵可以得出：测试集中的338个样本XGboost模型分类下，仅有6个样本分类错误，分类准确率达98.2%。
+
+<img title="" src="https://raw.githubusercontent.com/lzboo/ImgStg/main/2022/05/29-21-06-01-7.png" alt="7.png" width="314" data-align="center">
+
+<img title="" src="https://raw.githubusercontent.com/lzboo/ImgStg/main/2022/04/15-12-40-47-7.png" alt="7.png" width="313" data-align="center">
+
+        
+
+# 3. 总结与心得
+
+        该项目主要分为：**原始数据处理—>训练模型—>测试模型**三大部分。其中，原始数据处理需要耗费大量的时间，现实中收集到的数据很多是无法直接使用的，数据清洗、数据转换、样本特征的选择与提取等至关重要。
+
+1. **数据处理**：
+
+        CWRU原始数据集是通过时域采样得到的，无法直接送入传统的机器学习模型，需要预处理：
+
+* 以1000个采样点作为一个样本数据，以50%的重叠率生成样本，这样可以避免测试样本的随机性造成的影响；
+
+* 从时域和频域两个方面提取了12个特征，但是重要程度最高的两个特征却是最为简单的均值和方差！这个现象给了我们很大的启发：在求解问题的时候，一味的追求复杂高深并不一定可以达到好的效果，不能忽略那些看似简单基础的因素。（奥卡姆剃刀）
+
+* 数据的质量与算力决定了ML的上限，而算法则是去逼近这个上限
+2. **模型训练**：
+
+        我们选取了3个机器学习领域最基础的模型：KNN,SVM，XGboost。事实证明：XGboost真是上分大杀器！
+
+3. **心得**：
+
+        现在大家的研究注意力可能大多集中在深度学习方面，焦点总放在网络的搭建上，不可否认，深度学习的兴起以算力为代价解放了人力（专家、特征选择提取等），是很划算的，因为科学的目的就是为了“解放生产力”。但是传统的机器学习仍有很大探索发展空间，我也是在提醒自己，DL只是AI领域很小的一部分，不要因为“fellow the fashion”而忽视了其他待开采的土地！！（很重要）
+
+# 4 Future
+
+* 后面计划“追赶一下潮流”，用DL的一些方法再研究研究故障诊断，还有很多精彩的idea在等着我！
