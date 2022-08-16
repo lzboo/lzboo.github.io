@@ -1,6 +1,6 @@
 ---
 layout: article
-title: A continual learning survey[关于持续学习领域综述]
+title: Add Priori Knowledge To Network
 mathjax: true
 tags: Papers
 ---
