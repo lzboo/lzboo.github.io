@@ -1,6 +1,6 @@
 ---
 layout: article
-title: [神经网络加入先验]记录
+title: A continual learning survey[关于持续学习领域综述]
 mathjax: true
 tags: Papers
 ---
