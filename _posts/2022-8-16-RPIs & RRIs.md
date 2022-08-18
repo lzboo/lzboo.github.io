@@ -1,3 +1,10 @@
+---
+layout: article
+title: RNA-RNA interaction
+mathjax: true
+tags: Papers
+---
+
 # Protein-RNA interaction
 
 ## I Computational problems for protein-RNA interaction
